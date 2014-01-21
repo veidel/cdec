@@ -67,7 +67,7 @@ my $hopes=1;
 my $fears=1;
 my $sent_approx=0;
 my $pseudo_doc=0;
-
+my $adaptive;  
 my $range = 35000;
 my $minimum = 15000;
 my $portn = int(rand($range)) + $minimum;
@@ -82,6 +82,7 @@ if (GetOptions(
         "dont-clean" => \$disable_clean,
         "pass-suffix=s" => \$pass_suffix,
         "epsilon=s" => \$epsilon,
+	"adaptive=f" => \$adaptive, 
         "help" => \$help,
         "local" => \$run_local,
         "use-make=i" => \$use_make,
@@ -271,6 +272,10 @@ for (my $opt_iter=0; $opt_iter<$max_iterations; $opt_iter++) {
 	if ($density_prune) {
 		$decoder_cmd .= " --density_prune $density_prune";
 	}
+	if ($adaptive) {
+	    $decoder_cmd .= " -A $adaptive";
+        }
+
 	my $pcmd;
 	if ($run_local) {
 		$pcmd = "cat $srcFile |";
