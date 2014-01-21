@@ -48,6 +48,7 @@ int hope_select;
 bool pseudo_doc;
 bool sent_approx;
 bool checkloss;
+bool adaptive;
 
 void SanityCheck(const vector<double>& w) {
   for (int i = 0; i < w.size(); ++i) {
@@ -96,6 +97,8 @@ bool InitCommandLine(int argc, char** argv, po::variables_map* conf) {
     ("pseudo_doc,e", "Use pseudo-document BLEU score for approximate scoring")
     ("no_reweight,d","Do not reweight forest for cutting plane")
     ("no_select,n", "Do not use selection heuristic")
+    ("adaptive,A", po::value<double>(), "Use per-feature adaptive learning rate" )
+    ("checkloss","Only perform update when loss > 0 ")
     ("k_best_size,k", po::value<int>()->default_value(250), "Size of hypothesis list to search for oracles")
     ("update_k_best,b", po::value<int>()->default_value(1), "Size of good, bad lists to perform update with")
     ("unique_k_best,u", "Unique k-best translation list")
@@ -621,6 +624,13 @@ int main(int argc, char** argv) {
   unique_kbest = conf.count("unique_k_best");
   pseudo_doc = conf.count("pseudo_doc");
   sent_approx = conf.count("sent_approx");
+  checkloss=conf.count("checkloss");
+  adaptive = conf.count("adaptive");
+  double sigma_mix;
+  if(adaptive) {
+        sigma_mix = conf["adaptive"].as<double>();
+  }
+
   cerr << "Using pseudo-doc:" << pseudo_doc << " Sent:" << sent_approx << endl;
   if(pseudo_doc)
     mt_metric_scale=1;
@@ -656,6 +666,7 @@ int main(int argc, char** argv) {
   vector<weight_t>& dense_weights = decoder.CurrentWeightVector();
   
   SparseVector<weight_t> lambdas;
+  SparseVector<double> sigmas;
   Weights::InitFromFile(conf["input_weights"].as<string>(), &dense_weights);
   Weights::InitSparseVector(dense_weights, &lambdas);
 
@@ -738,9 +749,21 @@ int main(int argc, char** argv) {
 	      delta = 0;
 	    
 	    if (delta > max_step_size) delta = max_step_size;
-	    lambdas += (cur_good.features * delta);
-	    lambdas -= (cur_bad.features * delta);
-	    
+
+	    if (adaptive) {
+	      SparseVector<double> diff_sq = diff;
+	      diff_sq.exponent(2);
+	      sigmas += (diff_sq * sigma_mix);
+	      
+	      SparseVector<double> tmp = sigmas;
+	      tmp.exponent(-0.5);
+	      tmp *= delta;
+	      lambdas += diff * tmp;
+	    }
+	    else {
+	      lambdas += (cur_good.features * delta);
+	      lambdas -= (cur_bad.features * delta);
+	    }
 	  }
       }
       else if(optimizer == 1) //sgd - nonadapted step size
