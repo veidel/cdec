@@ -530,7 +530,13 @@ General options:
 		Size of k-best list to use for update (applies to optimizer 5)
 	--step-size <F>
 		Controls aggresiveness of update (C) 
-	--hope-select<I>
+	--b-step-size <F>
+		Controls aggresiveness of beta update (D) 
+	--beta <F>
+	        Setting for bound parameter beta (B)
+        --beta_scale
+                Scale beta by instance loss
+         --hope-select<I>
 		How to select hope candidate. Choices are 1) model score - cost, 2) min cost
 	--fear-select <I>
 		How to select fear candodate. Choices are 1) model score + cost, 2) max cost, 3) max score
