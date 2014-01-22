@@ -89,7 +89,7 @@ bool InitCommandLine(int argc, char** argv, po::variables_map* conf) {
     ("pass,p", po::value<int>()->default_value(15), "Current pass through the training data")
     ("reference,r",po::value<vector<string> >(), "[REQD] Reference translation(s) (tokenized text file)")
     ("mt_metric,m",po::value<string>()->default_value("ibm_bleu"), "Scoring metric (ibm_bleu, nist_bleu, koehn_bleu, ter, combi)")
-    ("optimizer,o",po::value<int>()->default_value(1), "Optimizer (SGD=1, PA MIRA w/Delta=2, Cutting Plane MIRA=3, PA MIRA=4, Triple nbest list MIRA=5)")
+    ("optimizer,o",po::value<int>()->default_value(1), "Optimizer (PA RMM w/Delta=2, Cutting Plane MIRA=3, ")
     ("fear,f",po::value<int>()->default_value(1), "Fear selection (model-cost=1, maxcost=2, maxscore=3)")
     ("hope,h",po::value<int>()->default_value(1), "Hope selection (model+cost=1, mincost=2)")
     ("beta_b,B", po::value<double>()->default_value(1), "Relative margin parameter (B)")
@@ -772,102 +772,7 @@ int main(int argc, char** argv) {
       if (!acc_f) { acc_f = fear_sentscore->GetZero(); }
       acc_f->PlusEquals(*fear_sentscore);
       
-      if(optimizer == 4) { //passive-aggresive update (single dual coordinate step)
-      
-	  double margin = cur_bad.features.dot(dense_weights) - cur_good.features.dot(dense_weights);
-	  double mt_loss = (cur_good.mt_metric - cur_bad.mt_metric);
-	  const double loss = margin +  mt_loss;
-	  cerr << "LOSS: " << loss << " Margin:" << margin << " BLEUL:" << mt_loss << " " << cur_bad.features.dot(dense_weights) << " " << cur_good.features.dot(dense_weights) <<endl;
-	  if (loss > 0.0 || !checkloss) {
-	    SparseVector<double> diff = cur_good.features;
-	    diff -= cur_bad.features;	    
-
-	    double diffsqnorm = diff.l2norm_sq();
-	    double delta;
-	    if (diffsqnorm > 0)
-	      delta = loss / (diffsqnorm);
-	    else
-	      delta = 0;
-	    
-	    if (delta > max_step_size) delta = max_step_size;
-
-	    if (adaptive) {
-	      SparseVector<double> diff_sq = diff;
-	      diff_sq.exponent(2);
-	      sigmas += (diff_sq * sigma_mix);
-	      
-	      SparseVector<double> tmp = sigmas;
-	      tmp.exponent(-0.5);
-	      tmp *= delta;
-	      lambdas += diff * tmp;
-	    }
-	    else {
-	      lambdas += (cur_good.features * delta);
-	      lambdas -= (cur_bad.features * delta);
-	    }
-	  }
-      }
-      else if(optimizer == 1) //sgd - nonadapted step size
-	{
-	   
-	  lambdas += (cur_good.features) * max_step_size;
-	  lambdas -= (cur_bad.features) * max_step_size;
-	}
-      else if(optimizer == 5) //full mira with n-best list of constraints from hope, fear, model best
-	{
-	  vector<shared_ptr<HypothesisInfo> > cur_constraint;
-	  cur_constraint.insert(cur_constraint.begin(), cur_bad_v.begin(), cur_bad_v.end());
-	  cur_constraint.insert(cur_constraint.begin(), cur_best_v.begin(), cur_best_v.end());
-	  cur_constraint.insert(cur_constraint.begin(), cur_good_v.begin(), cur_good_v.end());
-
-	  bool optimize_again;
-	  vector<shared_ptr<HypothesisInfo> > cur_pair;
-	  //SMO 
-	  for(int u=0;u!=cur_constraint.size();u++)	
-	    cur_constraint[u]->alpha =0;	      
-	  
-	  cur_constraint[0]->alpha =1; //set oracle to alpha=1
-
-	  cerr <<"Optimizing with " << cur_constraint.size() << " constraints" << endl;
-	  int smo_iter = MAX_SMO, smo_iter2 = MAX_SMO;
-	  int iter, iter2 =0;
-	  bool DEBUG_SMO = false;
-	  while (iter2 < smo_iter2)
-	    {
-	      iter =0;
-	      while (iter < smo_iter)
-		{
-		  optimize_again = true;
-		  for (int i = 0; i< cur_constraint.size(); i++)
-		    for (int j = i+1; j< cur_constraint.size(); j++)
-		      {
-			if(DEBUG_SMO) cerr << "start " << i << " " << j <<  endl;
-			cur_pair.clear();
-			cur_pair.push_back(cur_constraint[j]);
-			cur_pair.push_back(cur_constraint[i]);
-			double delta = ComputeDelta(&cur_pair,max_step_size, dense_weights);
-			
-			if (delta == 0) optimize_again = false;
-			cur_constraint[j]->alpha += delta;
-			cur_constraint[i]->alpha -= delta;
-			double step_size = delta * max_step_size;
-			
-			lambdas += (cur_constraint[i]->features) * step_size;
-			lambdas -= (cur_constraint[j]->features) * step_size;
-			if(DEBUG_SMO) cerr << "SMO opt " << iter << " " << i << " " << j << " " <<  delta << " " << cur_pair[0]->alpha << " " << cur_pair[1]->alpha <<  endl;		
-		      }
-		  iter++;
-		  
-		  if(!optimize_again)
-		    { 
-		      iter = MAX_SMO;
-		      cerr << "Optimization stopped, delta =0" << endl;
-		    }		  
-		}
-	      iter2++;
-	    }	  
-	}
-      else if(optimizer == 2 || optimizer == 3) //PA and Cutting Plane MIRA update
+      if(optimizer == 2 || optimizer == 3) //PA and Cutting Plane MIRA update
 	  {
 	    bool DEBUG_SMO= true;
 	    vector<shared_ptr<HypothesisInfo> > cur_constraint[3];
